@@ -161,6 +161,7 @@ Differential expression identifies which genes, if any, are implicated in a spec
 Results of a differential expression analysis in CSV format.
 If results are already made available, you may use those.
 Otherwise perform a differential expression analysis using DESeq2, limma, or edgeR from the provided counts file.
+
 #### Shiny Functionalities:
 <ul>
   <li>Tab with sortable table displaying differential expression results</li>
@@ -242,6 +243,7 @@ Create an app that computes pairwise gene expression correlation for a specific 
 Normalized counts matrix, by some method or other, in CSV format
 A multi-line text box (hint: textAreaInput) that accepts one gene name per line
 A slider setting the minimum correlation for drawing an edge
+
 #### Shiny Functionalities:
 
 <ul>
@@ -289,6 +291,7 @@ Input control that allows the user to choose one of the categorical fields found
 Input control that allows the user to choose one of the genes found in the counts matrix (hint: try implementing a search box)
 Input control allowing the user to select one of bar plot, boxplot, violin plot, or beeswarm plot
 A button that makes the thing go go
+
 #### Shiny Functionalities:
 
 Content displaying a plot of the selected type with the normalized gene counts for the selected gene split out by the categorical variable chosen
