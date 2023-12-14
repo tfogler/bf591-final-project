@@ -38,17 +38,20 @@ ui <- fluidPage(
                                    ".csv"),
                         placeholder = "example_intensity_data_subset_69.csv"),
               
-              sliderInput("bins",
-                         "Number of bins:",
-                         min = 1,
-                         max = 50,
-                         value = 30)
+              # sliderInput("bins",
+              #            "Number of bins:",
+              #            min = 1,
+              #            max = 50,
+              #            value = 30)
           ),
           
           mainPanel(
             tabsetPanel(
                 tabPanel("Summary", # Show a summary of the sample distribution
-                    p("Placeholder")
+                    p("Placeholder"),
+                    
+                    # Summary Table
+                    tableOutput(outputId = "summaryTable")
                 ),
                 
                 tabPanel("Table",
@@ -104,9 +107,9 @@ ui <- fluidPage(
               tabsetPanel(
                   tabPanel("Summary",
                       # Summary table
-                      p("Summary of Counts File"),
+                      p("Summary of Counts File")
                       
-                      verbatimTextOutput("summaryTable")
+                      # verbatimTextOutput("summaryTable")
                   ),
                   
                   tabPanel(
@@ -199,11 +202,34 @@ server <- function(input, output) {
     #' numerical or categorical.
     #' 
     data_summary <- function(input_data) {
-        summary.data.frame(input_data)
+        # extract data for summary columns
+        column_name <- colnames(input_data)
+        type <- sapply(input_data, class)
+        # create summary of distinct values (dv)
+        get_distinct_values <- function(df_column) {
+            if (class(df_column) %in% c("character", "factor")) {
+                dv <- as.factor(df_column)
+                dv <- levels(dv)
+            }
+            else {
+                colmean <- mean(df_column)
+                colstdev <- sd(df_column)
+                dv <- paste0(colmean, " (+/- ", colstdev, ")")
+            }
+            return(dv)
+        }
+        distinct_value <- sapply(input_data, get_distinct_values)
+        
+        # construct summary dataframe from columns
+        summary_data_frame <- data.frame(column_name, type, distinct_value)
+        # names(summary_data_frame) <- c("Column Name", "Type", "Mean (+/- sd) or Distinct Values")
+        summary_data_frame
     }
     
     
     ## Output Elements go here
+    
+    # generate table
     
     #' generate a table and display its head (first 6 rows)
     output$countsTable <- renderTable({
@@ -212,12 +238,12 @@ server <- function(input, output) {
         head(load_data())
     })
     
+    #' generate summary table for sample summary tab
     output$summaryTable <- renderTable({
         # table
-        req(input$file)
+        req(input$sample_file)
         
-        summary_table <- data_summary(
-            load_data())
+        summary_table <- data_summary(load_sample())
         
         return(summary_table)
     })
