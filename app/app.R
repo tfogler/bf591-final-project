@@ -81,7 +81,7 @@ ui <- fluidPage(
                hr(),
                
                # Heading
-               h2("Filter Counts Data according to Statistical Params:"),
+               h4("Filter Counts Data According to Statistical Params:"),
                
                # Input: Percent Variance Slider
                sliderInput("var",
@@ -95,7 +95,8 @@ ui <- fluidPage(
                sliderInput("zero",
                            "Minimun Number of Non-Zero Samples:",
                            min = 0,
-                           max = )
+                           max = 35,
+                           value = 5)
            ),
            
            mainPanel(
@@ -104,16 +105,31 @@ ui <- fluidPage(
                   tabPanel("Summary",
                       # Summary table
                       p("Summary of Counts File"),
-                      tableOutput(outputId = "summaryTable")
+                      
+                      verbatimTextOutput("summaryTable")
                   ),
                   
                   tabPanel(
                       "Head",
                       p("Counts File Table"),
                       tableOutput(outputId = "countsTable")
+                  ),
+                  
+                  tabPanel("Plots",
+                      p("Scatterplot of My Counts")
+                      # consider putting a colorpicker here
+                  ),
+                  
+                  tabPanel("Heatmap",
+                      p("Clustered Heatmap of filtered Counts")
+                  ),
+                  
+                  tabPanel("PCA",
+                      p("Principal Component Analysis of Filtered Genes")
                   )
               )
-               # counts table
+              # counts table
+              #shit goes here
            )
        ),
       ),
@@ -124,11 +140,29 @@ ui <- fluidPage(
         sidebarLayout(
             sidebarPanel(
                 # more stuff
+                h2("Differential Expression"),
                 
+                # Input: Select a DE analysis type~~~~~~~
+                radioButtons(
+                    inputId = "de",
+                    label = "Differential Expression Analysis:",
+                    choices = c("DESeq",
+                                "edgeR",
+                                "limma"),
+                    selected = "DESeq"
+                )
             ),
             
             # DEs plot panel
-            mainPanel()
+            mainPanel(
+                # Diff Eq Result DataTable
+                tabPanel("Table",
+                         DT::dataTableOutput("deTable")
+                ),
+                
+                # Differential Expression plot
+                tabPanel("DE Plot")
+            )
         ),
         
       ),
@@ -148,6 +182,11 @@ server <- function(input, output) {
         return(read.csv(input$file$datapath))
     })
     
+    load_sample <- reactive({
+        req(input$samplefile)
+        return(read.csv(input$samplefile$datapath))
+    })
+    
     ## Server functions go here
     
     #' 
@@ -160,6 +199,7 @@ server <- function(input, output) {
     data_summary <- function(input_data) {
         summary.data.frame(input_data)
     }
+    
     
     ## Output Elements go here
     
@@ -187,6 +227,12 @@ server <- function(input, output) {
       
       # draw the histogram with the specified number of bins
       hist(x, breaks = bins, col = 'darkgray', border = 'white')
+    })
+    
+    # diff_expr <- load_sample()
+    output$deTable <- DT::renderDataTable({
+        req(input$samplefile)
+        DT::datatable(load_sample(), options = list(orderClasses = TRUE))#, pageLength = 10)
     })
     
 }
