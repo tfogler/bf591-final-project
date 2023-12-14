@@ -161,7 +161,9 @@ ui <- fluidPage(
                 ),
                 
                 # Differential Expression plot
-                tabPanel("DE Plot")
+                tabPanel("DE Plot",
+                         p("Plotholders")
+                )
             )
         ),
         
