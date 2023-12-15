@@ -105,15 +105,14 @@ ui <- fluidPage(
                            "% Variance",
                            min = 0,
                            max = 100,
-                           value = 80
-               ),
+                           value = 0),
                
                # Input: Min Number of Non-zero Samples Slider
                sliderInput("zero",
                            "Minimun Number of Non-Zero Samples:",
                            min = 0,
-                           max = 4,
-                           value = 1)
+                           max = 8,
+                           value = 0)
            ),
            
            mainPanel(
@@ -277,7 +276,8 @@ server <- function(input, output) {
         f <- read.delim(input$file$datapath, row.names="gene")
         # f <- f[,c("vP0_1", "vP0_2", "vAd_1", "vAd_2")]
         unfiltered_data <<- f
-        f <- filter_samples_var(f, input$var / 100)
+        f <- f %>% filter_samples_zero_rows(input$zero) %>%
+            filter_samples_var(input$var / 100)
         return(f)
     })
     
@@ -312,8 +312,25 @@ server <- function(input, output) {
         return(verse_counts)
     }
     
-    #' Filter Counts Data with Minimum Data 
-    #' FUN Here
+    #' Filter Counts Data with Minimum Non-Zero Samples 
+    #' filters out genes from counts by a minimum number 
+    #' of nonzero samples, i.e. at least X samples in 
+    #' gene are non-zero.
+    #' 
+    #' example filter_samples_zero_rows(verse_counts, 1)
+    filter_samples_zero_rows <- function(verse_counts, min_nonzero) {
+        # evaluate values where v is not zero
+        is.zero <- \(v) (v == 0)
+        nonzeros <- !apply(verse_counts[-1], c(1,2), is.zero)
+        verse_counts$nonzeros <- apply(nonzeros, 1, sum)
+        
+        # select rows without zero
+        verse_counts <- verse_counts %>%
+            filter(nonzeros >= min_nonzero) %>%
+            select(!matches('^nonzeros'))
+        
+        return(verse_counts)
+    }
     
     #' Run DESeq on Counts Data.
     #' only run this one when selected.
