@@ -10,6 +10,17 @@
 library(shiny)
 library(colourpicker)
 
+libs <- c("tidyverse", "ggVennDiagram", "BiocManager",
+          "DESeq2", "edgeR", "limma")
+# if you don't have a package installed, use BiocManager::install() or 
+# install.packages(), as previously discussed.
+for (package in libs) {
+    suppressPackageStartupMessages(require(package, 
+                                           quietly = T, 
+                                           character.only = T))
+    require(package, character.only = T)
+}
+
 # Define UI for application that draws a histogram
 ui <- fluidPage(
    
@@ -36,7 +47,8 @@ ui <- fluidPage(
                         multiple = TRUE,
                         accept = c("text/csv",
                                    "text/comma-separated-values,text/plain",
-                                   ".csv"),
+                                   ".csv",
+                                   "*.tsv"),
                         placeholder = "example_intensity_data_subset_69.csv"),
               
               # sliderInput("bins",
@@ -73,7 +85,7 @@ ui <- fluidPage(
            
            sidebarPanel(
                # Input: Select a file ----
-               fileInput("file", "Upload *NORMALIZED* Counts Matrix File",
+               fileInput("file", "Upreload *NORMALIZED* Counts Matrix File",
                          multiple = TRUE,
                          accept = c("text/csv",
                                     "text/comma-separated-values,text/plain",
@@ -106,17 +118,24 @@ ui <- fluidPage(
            mainPanel(
               # Counts table panel
               tabsetPanel(
-                  tabPanel("Summary",
-                      # Summary table
-                      p("Summary of Counts File")
-                      
-                      # verbatimTextOutput("summaryTable")
-                  ),
-                  
                   tabPanel(
                       "Head",
                       p("Counts File Table"),
                       tableOutput(outputId = "countsTable")
+                  ),
+                  
+                  tabPanel("Summary",
+                           # Summary table
+                           p("Summary of Counts File"),
+                           
+                           tableOutput("summaryCountsTable")
+                  ),
+                  
+                  tabPanel("DESeq",
+                           # DESeq Results tABLE
+                           p("DESeq Results of Counts"),
+                           
+                           tableOutput(outputId = "deResults")
                   ),
                   
                   tabPanel("Plots",
@@ -147,7 +166,7 @@ ui <- fluidPage(
                 h2("Differential Expression"),
                 
                 # Input: Select a DE analysis type~~~~~~~
-                radioButtons(
+                selectInput(
                     inputId = "de",
                     label = "Differential Expression Analysis:",
                     choices = c("DESeq",
@@ -230,23 +249,92 @@ ui <- fluidPage(
 
 
 
-# Define server logic required to draw a histogram
+# Define server logic #
 server <- function(input, output) {
-    #' 
-    #' loads data and returns dataframe
-    load_data <- reactive({
-        return(read.csv(input$file$datapath))
+    ## Server reactives go here
+    
+    re_run_deseq <- reactive({
+        #
+        req(input$file)
+        
+        # make coldata
+        coldata <- data.frame(condition = rep(c("day0", "adult"), each=2))
+        row.names(coldata) <- c("vP0_1", "vP0_2", "vAd_1", "vAd_2")
+        cat("coldata: ")
+        print(coldata)
+        
+        # now run DESeq analysis
+        deseq_res <<- run_deseq(reload_data(), coldata, 10, "condition_day0_vs_adult")
     })
     
-    load_sample <- reactive({
+    de_analysis <- reactive({
+        switch(input$de,
+               "DESeq" = DESeq2,
+               "limma" = limma,
+               "edgeR" = edgeR)
+    })
+    
+    #' 
+    #' reloads data and returns dataframe
+    reload_data <- reactive({
+        req(input$file)
+        f <- read.delim(input$file$datapath, row.names="gene")
+        f <- f[,c("vP0_1", "vP0_2", "vAd_1", "vAd_2")]
+        return(f)
+    })
+    
+    reload_sample <- reactive({
         req(input$samplefile)
         return(read.csv(input$samplefile$datapath))
     })
     
     ## Server functions go here
     
+    #' Run DESeq on Counts Data.
+    #' only run this one when selected.
     #' 
-    #' Summarize the data from input file
+    #' @param count_dataframe The data frame of gene names and counts.
+    #' @param count_filter An arbitrary number of genes each row should contain or 
+    #' be excluded. DESeq2 suggests 10, but this could be customized while running. 
+    #' An integer.
+    #' @param condition_name A string identifying the comparison we are making. It 
+    #' follows the format "condition_[]_vs_[]". If I wanted to compare day4 and day7 
+    #' it would be "condition_day4_vs_day7".
+    #'
+    #' @return A dataframe of DESeq results. It has a header describing the 
+    #' condition, and 6 columns with genes as row names. 
+    #' @details This function is based on the DESeq2 User's Guide. These links describe 
+    #' the inputs and process we are working with. The output we are looking for comes 
+    #' from the DESeq2::results() function.
+    #' 
+    #' @examples run_deseq(counts_df, coldata, 10, "condition_day4_vs_day7")
+    run_deseq <- function(counts_df, coldata, count_filter, condition_name) {
+        # build DEseq dataset/se object from counts_df and coldata
+        dds <- DESeqDataSetFromMatrix(
+            countData = as.matrix(counts_df),
+            colData = coldata,
+            design = ~ condition
+        )
+        
+        #filter out counts below filter threshold
+        keep <- rowSums(counts(dds)) >= count_filter
+        dds <- dds[keep,]
+        
+        #relevel factors in colDatat of dds
+        #set "day0" to baseline
+        dds$condition <- factor(dds$condition, levels = c(
+            str_sub(condition_name, 11, 14),
+            str_extract(condition_name, '[^_]+$')
+        ))
+        
+        # run differential analysis
+        deseq_res <- DESeq(dds)
+        
+        results(deseq_res)
+    }
+    
+    #' 
+    #' Summarize the data from input file.
     #' For column in data, display the name,
     #' Datatype, and Mean or discrete
     #' values depending if data are 
@@ -315,13 +403,21 @@ server <- function(input, output) {
     
     ## Output Elements go here
     
-    # generate table
+    #' Generate DESeq Results
+    output$deResults <- renderTable({
+        req(input$file)
+        re_run_deseq()
+        
+        return(deseq_res)
+    })
     
+    #' generate table
+    #' 
     #' generate a table and display its head (first 6 rows)
     output$countsTable <- renderTable({
         # table
         req(input$file)
-        head(load_data())
+        head(reload_data())
     })
     
     #' generate summary table for sample summary tab
@@ -329,35 +425,54 @@ server <- function(input, output) {
         # table
         req(input$samplefile)
         
-        summary_table <- data_summary(load_sample())
+        summary_table <- data_summary(reload_sample())
         summary_table <- as.data.frame(summary_table)
         print(summary_table) # debug statement
         return(summary_table)
     })
     
-    output$distPlot <- renderPlot({
-      # generate bins based on input$bins from ui.R
-      x    <- faithful[, 2] 
-      bins <- seq(min(x), max(x), length.out = input$bins + 1)
-      
-      # draw the histogram with the specified number of bins
-      hist(x, breaks = bins, col = 'darkgray', border = 'white')
+    #' summary table for counts summary tab
+    output$summaryCountsTable <- renderTable({
+        # table
+        req(input$file)
+        
+        summary_table <- data_summary(reload_data())
+        summary_table <- as.data.frame(summary_table)
+        print(summary_table) # debug statement
+        return(summary_table)
     })
     
-    # diff_expr <- load_sample()
+    # output$distPlot <- renderPlot({
+    #   # generate bins based on input$bins from ui.R
+    #   x    <- faithful[, 2] 
+    #   bins <- seq(min(x), max(x), length.out = input$bins + 1)
+    #   
+    #   # draw the histogram with the specified number of bins
+    #   hist(x, breaks = bins, col = 'darkgray', border = 'white')
+    # })
+    
+    # diff_expr <- reload_sample()
+    # output$deTable <- DT::renderDataTable({
+    #     req(input$samplefile)
+    #     DT::datatable(reload_sample(), options = list(orderClasses = TRUE))#, pageLength = 10)
+    # })
+    
     output$deTable <- DT::renderDataTable({
-        req(input$samplefile)
-        DT::datatable(load_sample(), options = list(orderClasses = TRUE))#, pageLength = 10)
+        req(input$file)
+        re_run_deseq()
+        deseq_res <<- data.frame(deseq_res)
+        DT::datatable(deseq_res, options = list(orderClasses = TRUE))#, pageLength = 10)
     })
+    
     
     # Assignment RShiny Code
     
     output$volcano <- renderPlot({ # replace this NULL
         ##
-        req(input$samplefile)
+        req(input$file)
         
         return(
-            volcano_plot(load_sample(), input$xcol, input$ycol, input$magnum, 
+            volcano_plot(deseq_res, input$xcol, input$ycol, input$magnum, 
                          input$basecolour, input$highlightcolour)
         )
     })
