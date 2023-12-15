@@ -8,6 +8,7 @@
 #
 
 library(shiny)
+library(colourpicker)
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -153,11 +154,58 @@ ui <- fluidPage(
                                 "edgeR",
                                 "limma"),
                     selected = "DESeq"
-                )
+                ),
+                
+                # Input: Column Select buttons
+                radioButtons(inputId = "xcol",
+                             label = "Choose the column for the x-axis",
+                             choices = c( "baseMean",
+                                          "log2FoldChange",
+                                          "lfcSE",
+                                          "stat",
+                                          "pvalue",
+                                          "padj"),
+                             selected = "log2FoldChange"
+                ),
+                
+                radioButtons(inputId = "ycol",
+                             label = "Choose the column for the y-axis",
+                             choices = c( "baseMean",
+                                          "log2FoldChange",
+                                          "lfcSE",
+                                          "stat",
+                                          "pvalue",
+                                          "padj"),
+                             selected = "padj"
+                ),
+                
+                #Line break to add more space
+                br(),
+                
+                p("Base point color"),
+                
+                colourInput("basecolour", label = NULL, value = "#22577A"),
+                # Base point colourpicker here
+                
+                p("Highlight point color"),
+                
+                colourInput("highlightcolour", label = NULL, value = "#FFCF56"),
+                # Highlight point colourpicker here
+                
+                p(),
+                
+                # Slider for the highlighting threshold ----
+                sliderInput(inputId = "magnum",
+                            label = "Select the magnitude of the p-adjusted coloring:",
+                            min = -300,
+                            max = 0,
+                            value = -150),
+                hr()
             ),
             
             # DEs plot panel
             mainPanel(
+              tabsetPanel(
                 # Diff Eq Result DataTable
                 tabPanel("Table",
                          DT::dataTableOutput("deTable")
@@ -165,8 +213,11 @@ ui <- fluidPage(
                 
                 # Differential Expression plot
                 tabPanel("DE Plot",
-                         p("Plotholders")
+                         # Volcano Plot
+                         plotOutput(outputId = "volcano")
+                         
                 )
+              )
             )
         ),
         
@@ -226,6 +277,38 @@ server <- function(input, output) {
         summary_data_frame
     }
     
+    # Draw Volcano Plot in ggplot2
+    #'
+    #' @param dataf The loaded data frame.
+    #' @param x_name The column name to plot on the x-axis
+    #' @param y_name The column name to plot on the y-axis
+    #' @param slider A negative integer value representing the magnitude of
+    #' p-adjusted values to color. Most of our data will be between -1 and -300.
+    #' @param color1 One of the colors for the points.
+    #' @param color2 The other colors for the points. Hexadecimal strings: "#CDC4B5"
+    #'
+    #' @return A ggplot object of a volcano plot
+    #'
+    #' @examples volcano_plot(df, "log2fc", "padj", -100, "blue", "taupe")
+    #' 
+    volcano_plot <-
+        function(dataf, x_name, y_name, slider, color1, color2) {
+            highlight <- 10**slider
+            # GGplot2 Volcano Plot
+            volcano <- ggplot2::ggplot(dataf, mapping = ggplot2::aes(x = .data[[x_name]],
+                                                   y = -log10(.data[[y_name]]),
+                                                   color = (.data[[y_name]]) < highlight)
+            ) + ggplot2::geom_point(
+            ) + ggplot2::theme(legend.position = "bottom"
+            ) + ggplot2::scale_color_manual(values = c(color1, color2)
+            ) + ggplot2::labs(title="Plot of DE Results"
+            ) + ggplot2::coord_fixed(ratio = 0.045)
+            
+            # volcano <- update_labels(volcano, list(x = x_name, y = y_name))
+            
+            return(volcano)
+        }
+    
     
     ## Output Elements go here
     
@@ -261,6 +344,18 @@ server <- function(input, output) {
     output$deTable <- DT::renderDataTable({
         req(input$samplefile)
         DT::datatable(load_sample(), options = list(orderClasses = TRUE))#, pageLength = 10)
+    })
+    
+    # Assignment RShiny Code
+    
+    output$volcano <- renderPlot({ # replace this NULL
+        ##
+        req(input$samplefile)
+        
+        return(
+            volcano_plot(load_sample(), input$xcol, input$ycol, input$magnum, 
+                         input$basecolour, input$highlightcolour)
+        )
     })
     
 }
