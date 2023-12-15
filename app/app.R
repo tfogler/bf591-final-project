@@ -247,7 +247,7 @@ ui <- fluidPage(
 server <- function(input, output) {
     ## Server reactives go here
     
-    re_get_soybean_cn
+    # re_get_soybean_cn
     
     re_run_deseq <- reactive({
         #
@@ -275,7 +275,9 @@ server <- function(input, output) {
     reload_data <- reactive({
         req(input$file)
         f <- read.delim(input$file$datapath, row.names="gene")
-        f <- f[,c("vP0_1", "vP0_2", "vAd_1", "vAd_2")]
+        # f <- f[,c("vP0_1", "vP0_2", "vAd_1", "vAd_2")]
+        unfiltered_data <<- f
+        f <- filter_samples_var(f, input$var / 100)
         return(f)
     })
     
@@ -288,9 +290,10 @@ server <- function(input, output) {
     
     #' Filter Counts Data by Variance
     #' @param verse_counts counts data dataframe
+    #' @param var_filter minimum quantile of variance [0-1.0]
     #' 
-    #' @return Filtered counts with minimum
-    #' example filter_samples_var(verse_counts, input$variance$value)
+    #' @return Filtered counts with minimum percentile
+    #' example filter_samples_var(verse_counts, input$variance)
     #' 
     filter_samples_var <- function(verse_counts, var_filter) {
         #this code does run.
@@ -302,10 +305,15 @@ server <- function(input, output) {
                               FUN = var,
                               na.rm = F
                         )
-        verse_counts <- verse_counts[verse_counts_variance > var_filter, ]
+        
+        min_var <- quantile(verse_counts_variance, var_filter)
+        verse_counts <- verse_counts[verse_counts_variance > min_var, ]
         
         return(verse_counts)
     }
+    
+    #' Filter Counts Data with Minimum Data 
+    #' FUN Here
     
     #' Run DESeq on Counts Data.
     #' only run this one when selected.
@@ -467,7 +475,7 @@ server <- function(input, output) {
     #   # draw the histogram with the specified number of bins
     #   hist(x, breaks = bins, col = 'darkgray', border = 'white')
     # })
-    
+    #
     # diff_expr <- reload_sample()
     # output$deTable <- DT::renderDataTable({
     #     req(input$samplefile)
