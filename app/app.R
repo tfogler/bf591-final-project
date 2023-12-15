@@ -263,18 +263,21 @@ server <- function(input, output) {
                 dv <- levels(dv)
             }
             else {
-                colmean <- mean(df_column)
-                colstdev <- sd(df_column)
+                colmean <- mean(df_column, na.rm = T)
+                colstdev <- sd(df_column, na.rm = T)
                 dv <- paste0(colmean, " (+/- ", colstdev, ")")
             }
             return(dv)
         }
         distinct_value <- sapply(input_data, get_distinct_values)
+        distinct_value <- sapply(distinct_value, glue::glue_collapse, ", ")
         
         # construct summary dataframe from columns
-        summary_data_frame <- data.frame(column_name, type, distinct_value)
-        # names(summary_data_frame) <- c("Column Name", "Type", "Mean (+/- sd) or Distinct Values")
-        summary_data_frame
+        summary_df <- data.frame(column_name, type, row.names = NULL)
+        print(summary_df) #debug statement
+        summary_df$distinct.value <- distinct_value
+        names(summary_df) <- c("Column Name", "Type", "Mean (+/- sd) or Distinct Values")
+        summary_df
     }
     
     # Draw Volcano Plot in ggplot2
@@ -324,10 +327,11 @@ server <- function(input, output) {
     #' generate summary table for sample summary tab
     output$summaryTable <- renderTable({
         # table
-        req(input$sample_file)
+        req(input$samplefile)
         
         summary_table <- data_summary(load_sample())
-        
+        summary_table <- as.data.frame(summary_table)
+        print(summary_table) # debug statement
         return(summary_table)
     })
     
