@@ -11,7 +11,8 @@ library(shiny)
 library(colourpicker)
 
 libs <- c("tidyverse", "ggVennDiagram", "BiocManager",
-          "DESeq2", "edgeR", "limma")
+          "DESeq2", "edgeR", "limma",
+          "bigPint")
 # if you don't have a package installed, use BiocManager::install() or 
 # install.packages(), as previously discussed.
 for (package in libs) {
@@ -111,8 +112,8 @@ ui <- fluidPage(
                sliderInput("zero",
                            "Minimun Number of Non-Zero Samples:",
                            min = 0,
-                           max = 35,
-                           value = 5)
+                           max = 4,
+                           value = 1)
            ),
            
            mainPanel(
@@ -129,13 +130,6 @@ ui <- fluidPage(
                            p("Summary of Counts File"),
                            
                            tableOutput("summaryCountsTable")
-                  ),
-                  
-                  tabPanel("DESeq",
-                           # DESeq Results tABLE
-                           p("DESeq Results of Counts"),
-                           
-                           tableOutput(outputId = "deResults")
                   ),
                   
                   tabPanel("Plots",
@@ -253,6 +247,8 @@ ui <- fluidPage(
 server <- function(input, output) {
     ## Server reactives go here
     
+    re_get_soybean_cn
+    
     re_run_deseq <- reactive({
         #
         req(input$file)
@@ -289,6 +285,27 @@ server <- function(input, output) {
     })
     
     ## Server functions go here
+    
+    #' Filter Counts Data by Variance
+    #' @param verse_counts counts data dataframe
+    #' 
+    #' @return Filtered counts with minimum
+    #' example filter_samples_var(verse_counts, input$variance$value)
+    #' 
+    filter_samples_var <- function(verse_counts, var_filter) {
+        #this code does run.
+        #~(but it's just really slow because
+        #R really fkin hates doing row-wise operations)~
+        # using apply syntax is smarter makes me more intelligent
+        verse_counts_variance <- apply(verse_counts[,-1],
+                              MARGIN = 1,
+                              FUN = var,
+                              na.rm = F
+                        )
+        verse_counts <- verse_counts[verse_counts_variance > var_filter, ]
+        
+        return(verse_counts)
+    }
     
     #' Run DESeq on Counts Data.
     #' only run this one when selected.
