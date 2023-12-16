@@ -128,7 +128,7 @@ ui <- fluidPage(
                            # Summary table
                            p("Summary of Counts File"),
                            
-                           tableOutput("summaryCountsTable")
+                           verbatimTextOutput("filteredSummaryText")
                   ),
                   
                   tabPanel("Plots",
@@ -307,7 +307,7 @@ server <- function(input, output) {
                         )
         
         min_var <- quantile(verse_counts_variance, var_filter)
-        verse_counts <- verse_counts[verse_counts_variance > min_var, ]
+        verse_counts <- verse_counts[verse_counts_variance >= min_var, ]
         
         return(verse_counts)
     }
@@ -444,6 +444,37 @@ server <- function(input, output) {
     
     
     ## Output Elements go here
+    
+    #' Filter summary
+    #' 
+    #' be sure to incl.:
+    #'  number of samples
+    #'  total number of genes
+    #'  number and % of genes passing current filter
+    #'  number and % of genes not passing current filter
+    #' 
+    output$filteredSummaryText <- renderText({
+        # filtered # genes
+        num_filtered_genes <- dim(reload_data())[1]
+        # total # samples === # of numeric (int/float) rows
+        num_samples <- sum(sapply(unfiltered_data, is.numeric))
+        # total # of genes
+        num_genes <- dim(unfiltered_data)[1]
+        # calculate prop genes passing/not passing
+        percent_filtered <- num_filtered_genes / num_genes
+        
+        filter_summary <- c("Total # of Samples: ", num_samples,
+                            "Total # of Genes: ", num_genes,
+                            " \nNumber of Genes Passing Current Filter: ",
+                            num_filtered_genes,
+                            "  \tPercentage of Genes Passing Filter: ",
+                            percent_filtered * 100, " %",
+                            " \nNumber of Genes NOT Passing Current Filter: ",
+                            num_genes - num_filtered_genes,
+                            "\tPercentage of Genes NOT Passing FIlter: ",
+                            (1.0 - percent_filtered) * 100, " %",
+                            sep = " ")
+    })
     
     #' Generate DESeq Results
     output$deResults <- renderTable({
