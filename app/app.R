@@ -254,7 +254,14 @@ ui <- fluidPage(
 server <- function(input, output) {
     ## Server reactives go here
     
-    # re_get_soybean_cn
+    #' LOAD MY DATA SET REEEEE
+    #' 
+    re_get_soybean_cn <- reactive({
+        data("se_soybean_cn_sub")
+    })
+    
+    #' Get soybeans data
+
     
     re_run_deseq <- reactive({
         #
