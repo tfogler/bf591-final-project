@@ -52,6 +52,10 @@ ui <- fluidPage(
                                    "*.tsv"),
                         placeholder = "example_intensity_data_subset_69.csv"),
               
+              selectInput(inputId = 'delim',
+                          label = 'choose delimiter',
+                          choices = c(',', '\t'))
+              
               # sliderInput("bins",
               #            "Number of bins:",
               #            min = 1,
@@ -69,10 +73,13 @@ ui <- fluidPage(
                 ),
                 
                 tabPanel("Table",
-                    p("Placeholder")
+                    
+                    # Datatable
+                    p("Datatable of Samples Cols")
                 ),
                 
                 tabPanel("Plots",
+                    p("Plots of continuous variables")
                 )
             )
           )
@@ -132,8 +139,9 @@ ui <- fluidPage(
                   ),
                   
                   tabPanel("Plots",
-                      p("Scatterplot of My Counts")
+                      p("Scatterplot of My Counts"),
                       # consider putting a colorpicker here
+                      plotOutput(outputId = "scatterPlot", height = "360px")
                   ),
                   
                   tabPanel("Heatmap",
@@ -226,7 +234,7 @@ ui <- fluidPage(
                 # Differential Expression plot
                 tabPanel("DE Plot",
                          # Volcano Plot
-                         plotOutput(outputId = "volcano")
+                         plotOutput(outputId = "volcano", height = "360px")
                          
                 )
               )
@@ -252,14 +260,18 @@ server <- function(input, output) {
         #
         req(input$file)
         
+        # get counts
+        counts <- reload_data()
+        counts <- as.data.frame(counts[-1], row.names = counts$gene)
+        
         # make coldata
-        coldata <- data.frame(condition = rep(c("day0", "adult"), each=2))
-        row.names(coldata) <- c("vP0_1", "vP0_2", "vAd_1", "vAd_2")
+        coldata <- data.frame(condition = rep(c("day0", "day4", "day7", "adult"), each=2))
+        row.names(coldata) <- names(counts)
         cat("coldata: ")
         print(coldata)
         
         # now run DESeq analysis
-        deseq_res <<- run_deseq(reload_data(), coldata, 10, "condition_day0_vs_adult")
+        deseq_res <<- run_deseq(counts, coldata, 10, "condition_day0_vs_adult")
     })
     
     de_analysis <- reactive({
@@ -273,7 +285,7 @@ server <- function(input, output) {
     #' reloads data and returns dataframe
     reload_data <- reactive({
         req(input$file)
-        f <- read.delim(input$file$datapath, row.names="gene")
+        f <- read.delim(input$file$datapath) #, row.names="gene")
         # f <- f[,c("vP0_1", "vP0_2", "vAd_1", "vAd_2")]
         unfiltered_data <<- f
         f <- f %>% filter_samples_zero_rows(input$zero) %>%
@@ -283,7 +295,7 @@ server <- function(input, output) {
     
     reload_sample <- reactive({
         req(input$samplefile)
-        return(read.csv(input$samplefile$datapath))
+        return(read.csv(input$samplefile$datapath, sep = input$delim))
     })
     
     ## Server functions go here
@@ -351,6 +363,7 @@ server <- function(input, output) {
     #' 
     #' @examples run_deseq(counts_df, coldata, 10, "condition_day4_vs_day7")
     run_deseq <- function(counts_df, coldata, count_filter, condition_name) {
+        
         # build DEseq dataset/se object from counts_df and coldata
         dds <- DESeqDataSetFromMatrix(
             countData = as.matrix(counts_df),
@@ -435,12 +448,60 @@ server <- function(input, output) {
             ) + ggplot2::theme(legend.position = "bottom"
             ) + ggplot2::scale_color_manual(values = c(color1, color2)
             ) + ggplot2::labs(title="Plot of DE Results"
-            ) + ggplot2::coord_fixed(ratio = 0.045)
+            ) #+ ggplot2::coord_fixed(ratio = 0.045)
             
             # volcano <- update_labels(volcano, list(x = x_name, y = y_name))
             
             return(volcano)
         }
+    
+    #' Draw Heatmap
+    #' 
+    #' Makes a heatmap based on counts data
+    heat_map <- function(dataf) {
+        # heatmap()
+        return(NULL)
+    }
+    
+    #' Draw Scatterplot
+    #' 
+    #' Parses data behind the scenes and
+    #' makes a GGPlot2 scatterplot of 
+    #' Counts Data.
+    #' 
+    #' Diagnostic scatter plots,
+    #' where genes passing filters are 
+    #' marked in a darker color, and genes 
+    #' filtered out are lighter.
+    #' 
+    #' One plot for Median Count vs log10(Variance)
+    #' One for Median Count vs Number of Zeros    
+    #' 
+    counts_scatterplot <- function(counts_dataf, min_nonzero, var_filter) {
+        # calculate median & var
+        medians <- apply(counts_dataf[, -1], 1, median)
+        variance <- apply(counts_dataf[, -1], 1, \(vec) (log10(var(vec) + 1)))
+        
+        # familiar xprs (see filter_samples functions)
+        is.zero <- \(v) (v == 0)
+        zeros <- apply(verse_counts[-1], c(1,2), is.zero)
+        total_zeros <- apply(zeros, 1, sum)
+        
+        # is the gene in the filtered dataframe?
+        filtered <- counts_dataf %>%
+                filter_samples_zero_rows(min_nonzero = min_nonzero) %>%
+                filter_samples_var(var_filter = var_filter)
+        kept_genes <- counts_dataf$gene %in% filtered$gene
+        
+        # combine datar and then
+        counts_summary <- data.frame(gene = counts_dataf$gene, medians, variance, total_zeros, kept_genes) %>%
+                pivot_longer(cols = matches(c("zeros$", "variance$")), cols_vary = "fastest",
+                             names_to = "variable", values_to = "X")
+        # facet_wrap to combine two plots
+
+        ggplot(counts_summary, aes(X, medians, color = kept_genes)
+        ) + geom_point() + facet_wrap(~ variable)
+    }
     
     
     ## Output Elements go here
@@ -475,6 +536,27 @@ server <- function(input, output) {
                             (1.0 - percent_filtered) * 100, " %",
                             sep = " ")
     })
+    
+    
+    #' Generate Scatterplot in Scatterplot Tab
+    #' 
+    #' Tab with diagnostic scatter plots, 
+    #' where genes passing filters are marked 
+    #' in a darker color, and genes filtered 
+    #' out are lighter:
+    #' 
+    output$scatterPlot <- renderPlot({
+        # Create a plot of median values vs num zeros/variance
+        req(input$file)
+        print(head(unfiltered_data))
+        return(counts_scatterplot(unfiltered_data, input$zero, input$var))
+    })
+    
+    
+    #' Heatmap Tab
+    #' 
+    #' 
+    
     
     #' Generate DESeq Results
     output$deResults <- renderTable({
