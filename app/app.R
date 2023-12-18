@@ -54,7 +54,17 @@ ui <- fluidPage(
               
               selectInput(inputId = 'delim',
                           label = 'choose delimiter',
-                          choices = c(',', '\t'))
+                          choices = c(',', '\t')),
+              
+              selectInput(inputId = 'column',
+                          label = "Choose column to plot", 
+                          choices = c(
+                              'logFC',
+                              'logCPM',
+                              'LR',
+                              'PValue',
+                              'FDR'
+                          ))
               
               # sliderInput("bins",
               #            "Number of bins:",
@@ -75,11 +85,16 @@ ui <- fluidPage(
                 tabPanel("Table",
                     
                     # Datatable
-                    p("Datatable of Samples Cols")
+                    p("Datatable of Samples Cols"),
+                    
+                    DT::dataTableOutput(outputId = 'sampleTable')
                 ),
                 
                 tabPanel("Plots",
-                    p("Plots of continuous variables")
+                    p("Plots of continuous variables"),
+                    
+                    #Plot here
+                    plotOutput(outputId='samplePlots')
                 )
             )
           )
@@ -139,9 +154,25 @@ ui <- fluidPage(
                   ),
                   
                   tabPanel("Plots",
-                      p("Scatterplot of My Counts"),
-                      # consider putting a colorpicker here
-                      plotOutput(outputId = "scatterPlot", height = "360px")
+                      sidebarLayout(
+                          sidebarPanel(
+                              # consider putting a colorpicker here
+                              
+                              # Base point colourpicker here
+                              colourInput("pointColour", label = "Main Point Color", value = "#2D74A3"),
+                              
+                              # Filtered point colourpicker here
+                              colourInput("filteredColour", label = "Filtered Point Color", value = "#1A4A69"),
+                              
+                          ),
+                          
+                          mainPanel(
+                              p("Scatterplot of My Counts"),
+                              
+                              plotOutput(outputId = "scatterPlot", height = "360px")
+                              
+                          )
+                      )
                   ),
                   
                   tabPanel("Heatmap",
@@ -261,7 +292,19 @@ server <- function(input, output) {
     })
     
     #' Get soybeans data
+    #' 
+    #' 
+    reload_soybean <- reactive({
+        re_get_soybean_cn()
+        assay(se_soybean_cn_sub)
+    })
 
+    
+    reload_soybean_sample <- reactive({
+        re_get_soybean_cn()
+        rowData(se_soybean_cn_sub)
+    })
+    
     
     re_run_deseq <- reactive({
         #
@@ -411,6 +454,11 @@ server <- function(input, output) {
             if (class(df_column) %in% c("character", "factor")) {
                 dv <- as.factor(df_column)
                 dv <- levels(dv)
+                if (length(dv) > 6) {
+                    #expression
+                    print('big pint')
+                    dv <- c(dv[1:6], '...')
+                }
             }
             else {
                 colmean <- mean(df_column, na.rm = T)
@@ -424,7 +472,7 @@ server <- function(input, output) {
         
         # construct summary dataframe from columns
         summary_df <- data.frame(column_name, type, row.names = NULL)
-        print(summary_df) #debug statement
+        # print(summary_df) #debug statement
         summary_df$distinct.value <- distinct_value
         names(summary_df) <- c("Column Name", "Type", "Mean (+/- sd) or Distinct Values")
         summary_df
@@ -484,21 +532,21 @@ server <- function(input, output) {
     #' One plot for Median Count vs log10(Variance)
     #' One for Median Count vs Number of Zeros    
     #' 
-    counts_scatterplot <- function(counts_dataf, min_nonzero, var_filter) {
+    counts_scatterplot <- function(counts_dataf, min_nonzero, var_filter, color1, color2) {
         # calculate median & var
         medians <- apply(counts_dataf[, -1], 1, median)
         variance <- apply(counts_dataf[, -1], 1, \(vec) (log10(var(vec) + 1)))
         
         # familiar xprs (see filter_samples functions)
         is.zero <- \(v) (v == 0)
-        zeros <- apply(verse_counts[-1], c(1,2), is.zero)
+        zeros <- apply(counts_dataf[-1], c(1,2), is.zero)
         total_zeros <- apply(zeros, 1, sum)
         
         # is the gene in the filtered dataframe?
         filtered <- counts_dataf %>%
                 filter_samples_zero_rows(min_nonzero = min_nonzero) %>%
                 filter_samples_var(var_filter = var_filter)
-        kept_genes <- counts_dataf$gene %in% filtered$gene
+        kept_genes <- !(counts_dataf$gene %in% filtered$gene)
         
         # combine datar and then
         counts_summary <- data.frame(gene = counts_dataf$gene, medians, variance, total_zeros, kept_genes) %>%
@@ -507,11 +555,42 @@ server <- function(input, output) {
         # facet_wrap to combine two plots
 
         ggplot(counts_summary, aes(X, medians, color = kept_genes)
-        ) + geom_point() + facet_wrap(~ variable)
+        ) + geom_point() + scale_color_manual(values = c(color1, color2)
+        ) + facet_wrap(~ variable) + theme(legend.position = "none")
+    }
+    
+    # Sample tab plots
+    #
+    draw_sample_plots <- function(sample_data, column) {
+        # Data summary:
+        # columns are logFC, logCPM, LR, PValue, FDR
+        # then they go into early to middle to late 
+        # S1-S2 S1-S3 S2-S3
+        sample_data_longer <- pivot_longer(row.data, c(-1)) %>%
+            separate(name, into = c('group', 'v'), sep = '[.]') %>% #v for variable
+            pivot_wider(names_from = v, values_from = value)
+        # This *separate()s* the data into more ggplot-readable columns
+        ggplot(sample_data_longer, mapping=aes(group, y=.data[[column]])) + geom_violin() +
+            theme_light() %>%
+        return()
     }
     
     
     ## Output Elements go here
+    
+    #' Data Table for Samples Tab
+    #' 
+    output$sampleTable <- DT::renderDataTable({
+        sample_info <- reload_soybean_sample() %>%
+            as.data.frame(row.names = NULL)
+        DT::datatable(sample_info, options = list(orderClasses = TRUE))
+    })
+    
+    # Sample plots for Samples Plots Tab
+    output$samplePlots <- renderPlot({
+        draw_sample_plots(sample_data = reload_soybean_sample(),
+                          column = input$column)
+    })
     
     #' Filter summary
     #' 
@@ -556,7 +635,8 @@ server <- function(input, output) {
         # Create a plot of median values vs num zeros/variance
         req(input$file)
         print(head(unfiltered_data))
-        return(counts_scatterplot(unfiltered_data, input$zero, input$var))
+        return(counts_scatterplot(unfiltered_data, input$zero, input$var / 100, 
+                                  input$pointColour, input$filteredColour))
     })
     
     
@@ -585,9 +665,9 @@ server <- function(input, output) {
     #' generate summary table for sample summary tab
     output$summaryTable <- renderTable({
         # table
-        req(input$samplefile)
+        # req(input$samplefile)
         
-        summary_table <- data_summary(reload_sample())
+        summary_table <- data_summary(reload_soybean_sample())
         summary_table <- as.data.frame(summary_table)
         print(summary_table) # debug statement
         return(summary_table)
