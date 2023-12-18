@@ -284,6 +284,7 @@ ui <- fluidPage(
 # Define server logic #
 server <- function(input, output) {
     ## Server reactives go here
+    ############################################################################
     
     #' LOAD MY DATA SET REEEEE
     #' 
@@ -294,7 +295,7 @@ server <- function(input, output) {
     #' Get soybeans data
     #' 
     #' 
-    reload_soybean <- reactive({
+    reload_soybean_data <- reactive({
         re_get_soybean_cn()
         assay(se_soybean_cn_sub)
     })
@@ -311,7 +312,7 @@ server <- function(input, output) {
         req(input$file)
         
         # get counts
-        counts <- reload_data()
+        counts <- reload_soybean_data()
         counts <- as.data.frame(counts[-1], row.names = counts$gene)
         
         # make coldata
@@ -349,6 +350,7 @@ server <- function(input, output) {
     })
     
     ## Server functions go here
+    ############################################################################
     
     #' Filter Counts Data by Variance
     #' @param verse_counts counts data dataframe
@@ -577,6 +579,7 @@ server <- function(input, output) {
     
     
     ## Output Elements go here
+    ############################################################################
     
     #' Data Table for Samples Tab
     #' 
@@ -602,7 +605,7 @@ server <- function(input, output) {
     #' 
     output$filteredSummaryText <- renderText({
         # filtered # genes
-        num_filtered_genes <- dim(reload_data())[1]
+        num_filtered_genes <- dim(reload_soybean_data())[1]
         # total # samples === # of numeric (int/float) rows
         num_samples <- sum(sapply(unfiltered_data, is.numeric))
         # total # of genes
@@ -659,7 +662,7 @@ server <- function(input, output) {
     output$countsTable <- renderTable({
         # table
         req(input$file)
-        head(reload_data())
+        head(reload_soybean_data())
     })
     
     #' generate summary table for sample summary tab
@@ -678,7 +681,7 @@ server <- function(input, output) {
         # table
         req(input$file)
         
-        summary_table <- data_summary(reload_data())
+        summary_table <- data_summary(reload_soybean_data())
         summary_table <- as.data.frame(summary_table)
         print(summary_table) # debug statement
         return(summary_table)
