@@ -131,26 +131,24 @@ ui <- fluidPage(
                
                # Input: Min Number of Non-zero Samples Slider
                sliderInput("zero",
-                           "Minimun Number of Non-Zero Samples:",
+                           "Minimum Number of Non-Zero Samples:",
                            min = 0,
-                           max = 8,
+                           max = 10,
                            value = 0)
            ),
            
            mainPanel(
               # Counts table panel
               tabsetPanel(
-                  tabPanel(
-                      "Head",
-                      p("Counts File Table"),
-                      tableOutput(outputId = "countsTable")
-                  ),
-                  
                   tabPanel("Summary",
                            # Summary table
-                           p("Summary of Counts File"),
+                           p("Summary of Counts Filtering"),
                            
-                           verbatimTextOutput("filteredSummaryText")
+                           verbatimTextOutput("filteredSummaryText"),
+                           
+                           p("Counts Data Summary Table"),
+                           
+                           tableOutput(outputId = "summaryCountsTable")
                   ),
                   
                   tabPanel("Plots",
@@ -162,7 +160,7 @@ ui <- fluidPage(
                               colourInput("pointColour", label = "Main Point Color", value = "#2D74A3"),
                               
                               # Filtered point colourpicker here
-                              colourInput("filteredColour", label = "Filtered Point Color", value = "#1A4A69"),
+                              colourInput("filteredColour", label = "Filtered Point Color", value = "#112E42"),
                               
                           ),
                           
@@ -296,14 +294,24 @@ server <- function(input, output) {
     #' 
     #' 
     reload_soybean_data <- reactive({
+        # retrieve data
         re_get_soybean_cn()
-        assay(se_soybean_cn_sub)
+        
+        soybean_data <- assay(se_soybean_cn_sub) # SE Object-DelayedMatrix
+        
+        unfiltered_data <<- soybean_data %>% 
+            as.data.frame() %>%
+            mutate(gene = row.names(soybean_data), .before = 1)
+        
+        filtered <- unfiltered_data %>% filter_samples_zero_rows(input$zero) %>%
+            filter_samples_var(input$var / 100)
+        return(filtered)
     })
 
     
     reload_soybean_sample <- reactive({
         re_get_soybean_cn()
-        rowData(se_soybean_cn_sub)
+        rowData(se_soybean_cn_sub) %>% as.data.frame() # DFrame object by default
     })
     
     
@@ -325,6 +333,7 @@ server <- function(input, output) {
         deseq_res <<- run_deseq(counts, coldata, 10, "condition_day0_vs_adult")
     })
     
+    # Choose DE analysis type
     de_analysis <- reactive({
         switch(input$de,
                "DESeq" = DESeq2,
@@ -332,6 +341,9 @@ server <- function(input, output) {
                "edgeR" = edgeR)
     })
     
+    # 
+    
+    #' (Re)-load in Counts Data from File
     #' 
     #' reloads data and returns dataframe
     reload_data <- reactive({
@@ -364,7 +376,7 @@ server <- function(input, output) {
         #~(but it's just really slow because
         #R really fkin hates doing row-wise operations)~
         # using apply syntax is smarter makes me more intelligent
-        verse_counts_variance <- apply(verse_counts[,-1],
+        verse_counts_variance <- apply(verse_counts[, -1],
                               MARGIN = 1,
                               FUN = var,
                               na.rm = F
@@ -458,7 +470,7 @@ server <- function(input, output) {
                 dv <- levels(dv)
                 if (length(dv) > 6) {
                     #expression
-                    print('big pint')
+                    # print('big pint')
                     dv <- c(dv[1:6], '...')
                 }
             }
@@ -554,11 +566,13 @@ server <- function(input, output) {
         counts_summary <- data.frame(gene = counts_dataf$gene, medians, variance, total_zeros, kept_genes) %>%
                 pivot_longer(cols = matches(c("zeros$", "variance$")), cols_vary = "fastest",
                              names_to = "variable", values_to = "X")
+        
         # facet_wrap to combine two plots
-
+        labeller = c(`total_zeros` = "Total Zeros", `variance` = "Log10 Variance")
         ggplot(counts_summary, aes(X, medians, color = kept_genes)
         ) + geom_point() + scale_color_manual(values = c(color1, color2)
-        ) + facet_wrap(~ variable) + theme(legend.position = "none")
+        ) + facet_wrap(~ variable, labeller = as_labeller(labeller) # add descriptive labels
+        ) + theme(legend.position = "none")
     }
     
     # Sample tab plots
@@ -568,7 +582,7 @@ server <- function(input, output) {
         # columns are logFC, logCPM, LR, PValue, FDR
         # then they go into early to middle to late 
         # S1-S2 S1-S3 S2-S3
-        sample_data_longer <- pivot_longer(row.data, c(-1)) %>%
+        sample_data_longer <- pivot_longer(sample_data, c(-1)) %>%
             separate(name, into = c('group', 'v'), sep = '[.]') %>% #v for variable
             pivot_wider(names_from = v, values_from = value)
         # This *separate()s* the data into more ggplot-readable columns
@@ -584,8 +598,7 @@ server <- function(input, output) {
     #' Data Table for Samples Tab
     #' 
     output$sampleTable <- DT::renderDataTable({
-        sample_info <- reload_soybean_sample() %>%
-            as.data.frame(row.names = NULL)
+        sample_info <- reload_soybean_sample()
         DT::datatable(sample_info, options = list(orderClasses = TRUE))
     })
     
@@ -636,7 +649,7 @@ server <- function(input, output) {
     #' 
     output$scatterPlot <- renderPlot({
         # Create a plot of median values vs num zeros/variance
-        req(input$file)
+        # req(input$file)
         print(head(unfiltered_data))
         return(counts_scatterplot(unfiltered_data, input$zero, input$var / 100, 
                                   input$pointColour, input$filteredColour))
@@ -679,7 +692,7 @@ server <- function(input, output) {
     #' summary table for counts summary tab
     output$summaryCountsTable <- renderTable({
         # table
-        req(input$file)
+        # req(input$file, cancelOutput = T)
         
         summary_table <- data_summary(reload_soybean_data())
         summary_table <- as.data.frame(summary_table)
