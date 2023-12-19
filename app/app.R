@@ -10,9 +10,9 @@
 library(shiny)
 library(colourpicker)
 
-libs <- c("tidyverse", "ggVennDiagram", "BiocManager",
+libs <- c("tidyverse", "ggVennDiagram", "BiocManager", "bigPint",
           "DESeq2", "edgeR", "limma",
-          "bigPint")
+          "gplots")
 # if you don't have a package installed, use BiocManager::install() or 
 # install.packages(), as previously discussed.
 for (package in libs) {
@@ -29,7 +29,7 @@ ui <- fluidPage(
    tags$head(
         # Application title
         titlePanel("TFogler RShiny Final Project"),
-        h1("Final Project RShiny App")
+        h1("Soybean Cotyledon RNA-Seq Data Analysis")
    ),
    
    
@@ -173,7 +173,10 @@ ui <- fluidPage(
                   ),
                   
                   tabPanel("Heatmap",
-                      p("Clustered Heatmap of Filtered Counts")
+                      p("Clustered Heatmap of Filtered Counts"),
+                      
+                      #Heatmap
+                      plotOutput(outputId = "heatMap", height = '400px')
                   ),
                   
                   tabPanel("PCA",
@@ -338,7 +341,7 @@ server <- function(input, output) {
         req(input$file)
         
         # get counts
-        counts <- reload_soybean_data()
+        counts <- reload_data()
         counts <- as.data.frame(counts[-1], row.names = counts$gene)
         
         # make coldata
@@ -542,14 +545,8 @@ server <- function(input, output) {
             return(volcano)
         }
     
-    #' Draw Heatmap
-    #' 
-    #' Makes a heatmap based on counts data
-    heat_map <- function(dataf) {
-        # heatmap()
-        return(NULL)
-    }
-    
+
+
     #' Draw Scatterplot
     #' 
     #' Parses data behind the scenes and
@@ -609,6 +606,8 @@ server <- function(input, output) {
         return()
     }
     
+    # Counts PCA plot
+    #
     plot_pca <- function(data, xcolumn, ycolumn, title="") {
         # no need to transpose data
         # data <- t(data)
@@ -623,13 +622,27 @@ server <- function(input, output) {
         variances <- glue::glue("({variances*100}% Var)") 
         labels <- paste(names(principal.components), variances) %>% 
             `names<-`(names(principal.components))
-        print(labels)
+        # print(labels)
+        # Draw PC Plot
         pc_plot <- ggplot(principal.components,
                           mapping=aes(.data[[xcolumn]], .data[[ycolumn]]),
                           labeller = as_labeller(labels)
             ) + geom_point() + labs(title = title) + xlab(labels[xcolumn]) + ylab(labels[ycolumn])
         
         return(pc_plot)
+    }
+    
+    # Counts Heatmap
+    #
+    make_heatmap <- function(.data) {
+        # make heatmap (stats)
+        # not ggplot2
+        marker_matrix <- as.matrix(
+            select(.data, c("S1.1", "S1.2", "S1.3", "S2.1", "S2.2", "S2.3", "S3.1", "S3.2", "S3.3"))
+        )
+        rownames(marker_matrix) <- .data$gene
+        
+        heatmap.2(marker_matrix, col = cm.colors(231))
     }
     
     ## Output Elements go here
@@ -697,12 +710,17 @@ server <- function(input, output) {
     
     
     #' Heatmap Tab
+    #' Draw Heatmap
     #' 
-    #' 
+    #' Makes a heatmap based on counts data
+    #' very simple block plotting filtered cts
+    output$heatMap <- renderPlot({
+        make_heatmap(reload_soybean_data())
+    })
     
     #' PCA Tab
     #' 
-    #' 
+    #' enters specified PC's from filtered cts on X and Y
     output$pcaPlot <- renderPlot({
         plot_pca(reload_soybean_data(), input$pcx, input$pcy, "Principal Components Plot of Counts")
     })
@@ -746,15 +764,8 @@ server <- function(input, output) {
         return(summary_table)
     })
     
-    # output$distPlot <- renderPlot({
-    #   # generate bins based on input$bins from ui.R
-    #   x    <- faithful[, 2] 
-    #   bins <- seq(min(x), max(x), length.out = input$bins + 1)
-    #   
-    #   # draw the histogram with the specified number of bins
-    #   hist(x, breaks = bins, col = 'darkgray', border = 'white')
-    # })
-    #
+    
+    
     # diff_expr <- reload_sample()
     # output$deTable <- DT::renderDataTable({
     #     req(input$samplefile)
@@ -771,7 +782,7 @@ server <- function(input, output) {
     
     # Assignment RShiny Code
     
-    output$volcano <- renderPlot({ # replace this NULL
+    output$volcano <- renderPlot({
         ##
         req(input$file)
         
