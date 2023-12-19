@@ -154,7 +154,6 @@ ui <- fluidPage(
                   tabPanel("Plots",
                       sidebarLayout(
                           sidebarPanel(
-                              # consider putting a colorpicker here
                               
                               # Base point colourpicker here
                               colourInput("pointColour", label = "Main Point Color", value = "#2D74A3"),
@@ -174,11 +173,30 @@ ui <- fluidPage(
                   ),
                   
                   tabPanel("Heatmap",
-                      p("Clustered Heatmap of filtered Counts")
+                      p("Clustered Heatmap of Filtered Counts")
                   ),
                   
                   tabPanel("PCA",
-                      p("Principal Component Analysis of Filtered Genes")
+                      p("Principal Component Analysis of Filtered Genes"),
+                      
+                      sidebarLayout(
+                          sidebarPanel(
+                              # Input: Principal Component X
+                              selectInput(inputId = "pcx", label = "X Axis PC",
+                                          choices = paste0(rep("PC", 9), seq(9)),
+                                          selected = "PC1"),
+                              
+                              # Input: Principal Comp Y
+                              selectInput(inputId = "pcy", label = "Y Axis PC",
+                                          choices = paste0(rep("PC", 9), seq(9)),
+                                          selected = "PC2")
+                          ),
+                          
+                          mainPanel(
+                            #PCA Plot
+                            plotOutput(outputId = "pcaPlot", height = '360px')
+                          )
+                    )
                   )
               )
               # counts table
@@ -591,6 +609,28 @@ server <- function(input, output) {
         return()
     }
     
+    plot_pca <- function(data, xcolumn, ycolumn, title="") {
+        # no need to transpose data
+        # data <- t(data)
+        #compute pc's
+        pca_results <- prcomp(data[-1])
+        variances <- summary(pca_results)$importance[2,] # get prop of variance
+                                                         # explained
+        # get results
+        principal.components <- pca_results$x %>% as.data.frame()
+        
+        # include variances in the labels
+        variances <- glue::glue("({variances*100}% Var)") 
+        labels <- paste(names(principal.components), variances) %>% 
+            `names<-`(names(principal.components))
+        print(labels)
+        pc_plot <- ggplot(principal.components,
+                          mapping=aes(.data[[xcolumn]], .data[[ycolumn]]),
+                          labeller = as_labeller(labels)
+            ) + geom_point() + labs(title = title) + xlab(labels[xcolumn]) + ylab(labels[ycolumn])
+        
+        return(pc_plot)
+    }
     
     ## Output Elements go here
     ############################################################################
@@ -660,6 +700,12 @@ server <- function(input, output) {
     #' 
     #' 
     
+    #' PCA Tab
+    #' 
+    #' 
+    output$pcaPlot <- renderPlot({
+        plot_pca(reload_soybean_data(), input$pcx, input$pcy, "Principal Components Plot of Counts")
+    })
     
     #' Generate DESeq Results
     output$deResults <- renderTable({
